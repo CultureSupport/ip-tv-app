@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Open Stream IPTV</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Video.js CSS -->
+    <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        .video-js {
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            border-radius: 0.75rem;
+            overflow: hidden;
+        }
+        .vjs-big-play-button {
+            top: 50% !important;
+            left: 50% !important;
+            transform: translate(-50%, -50%);
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    <div id="app" class="max-w-6xl mx-auto p-4 md:p-8">
+        <!-- Header -->
+        <header class="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
+            <div class="flex items-center gap-2">
+                <i data-lucide="tv" class="text-blue-500 w-8 h-8"></i>
+                <h1 class="text-2xl font-bold tracking-tight">OpenStream <span class="text-blue-500">IPTV</span></h1>
+            </div>
+            
+            <!-- Category Selector -->
+            <div class="flex items-center gap-2 bg-gray-800 p-1 rounded-lg border border-gray-700">
+                <i data-lucide="filter" class="w-4 h-4 ml-2 text-gray-400"></i>
+                <select 
+                    v-model="selectedCategory" 
+                    @change="fetchCategoryChannels"
+                    class="bg-transparent text-sm p-2 outline-none cursor-pointer border-none focus:ring-0"
+                >
+                    <option v-for="cat in categories" :key="cat.id" :value="cat.id" class="bg-gray-800">
+                        {{ cat.name }}
+                    </option>
+                </select>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Player Section -->
+            <div class="lg:col-span-2 space-y-4">
+                <div class="bg-black rounded-xl shadow-2xl overflow-hidden border border-gray-800 relative">
+                    <div v-if="loading" class="absolute inset-0 flex items-center justify-center bg-gray-900 z-10">
+                        <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+                    </div>
+                    <video id="iptv-player" class="video-js vjs-big-play-centered vjs-theme-city" controls preload="auto" playsinline></video>
+                </div>
+                
+                <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 shadow-lg">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h2 class="text-xl font-semibold mb-2">{{ currentChannel.name || 'Select a Channel' }}</h2>
+                            <p class="text-gray-400 text-sm flex items-center gap-2">
+                                <i data-lucide="globe" class="w-4 h-4"></i>
+                                {{ currentChannel.url ? 'Streaming from public GitHub source' : 'Select a category and channel to begin.' }}
+                            </p>
+                        </div>
+                        <span v-if="currentChannel.category" class="px-3 py-1 bg-blue-900/50 text-blue-400 text-xs rounded-full border border-blue-800 uppercase tracking-wider">
+                            {{ currentChannel.category }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Playlist Section -->
+            <div class="bg-gray-800 rounded-xl border border-gray-700 shadow-lg flex flex-col h-[600px]">
+                <div class="p-4 border-b border-gray-700 flex justify-between items-center">
+                    <h3 class="font-bold flex items-center gap-2">
+                        <i data-lucide="list-video" class="w-5 h-5 text-blue-500"></i>
+                        {{ activeCategoryName }}
+                    </h3>
+                    <span class="text-xs text-gray-500">{{ channels.length }} channels</span>
+                </div>
+                
+                <div class="flex-1 overflow-y-auto custom-scrollbar p-2">
+                    <div v-if="fetching" class="flex flex-col items-center justify-center h-full text-gray-500 gap-2">
+                        <div class="animate-pulse bg-gray-700 h-4 w-32 rounded"></div>
+                        <div class="animate-pulse bg-gray-700 h-4 w-24 rounded"></div>
+                    </div>
+                    
+                    <button 
+                        v-else
+                        v-for="(channel, index) in channels" 
+                        :key="index"
+                        @click="playChannel(channel)"
+                        class="w-full text-left p-3 rounded-lg mb-1 transition-all flex items-center gap-3 group"
+                        :class="currentChannel.url === channel.url ? 'bg-blue-600' : 'hover:bg-gray-700'"
+                    >
+                        <div class="bg-gray-900 p-2 rounded-md group-hover:bg-gray-800">
+                            <i data-lucide="play" class="w-4 h-4" :class="currentChannel.url === channel.url ? 'text-white' : 'text-blue-500'"></i>
+                        </div>
+                        <div class="overflow-hidden">
+                            <div class="font-medium truncate text-sm">{{ channel.name }}</div>
+                        </div>
+                    </button>
+                </div>
+                
+                <div class="p-4 bg-gray-900 rounded-b-xl text-xs text-center text-gray-500 italic">
+                    Source: github.com/iptv-org
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Video.js Script -->
+    <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
+    <!-- Vue.js Script -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+
+    <script>
+        const { createApp, ref, onMounted, computed } = Vue;
+
+        createApp({
+            setup() {
+                const player = ref(null);
+                const currentChannel = ref({});
+                const channels = ref([]);
+                const loading = ref(false);
+                const fetching = ref(false);
+                const selectedCategory = ref('news');
+
+                const categories = [
+                    { id: 'news', name: 'News' },
+                    { id: 'sports', name: 'Sports' },
+                    { id: 'movies', name: 'Movies' },
+                    { id: 'science', name: 'Science' },
+                    { id: 'kids', name: 'Kids' },
+                    { id: 'music', name: 'Music' },
+                    { id: 'documentary', name: 'Documentary' }
+                ];
+
+                const activeCategoryName = computed(() => {
+                    return categories.find(c => c.id === selectedCategory.value)?.name || 'Channels';
+                });
+
+                // Fetching logic for M3U8 files from GitHub
+                const fetchCategoryChannels = async () => {
+                    fetching.value = true;
+                    try {
+                        const url = `https://iptv-org.github.io/iptv/categories/${selectedCategory.value}.m3u`;
+                        const response = await fetch(url);
+                        const text = await response.text();
+                        
+                        // Basic M3U Parser
+                        const lines = text.split('\n');
+                        const parsedChannels = [];
+                        let currentName = '';
+
+                        for (let i = 0; i < lines.length; i++) {
+                            const line = lines[i].trim();
+                            if (line.startsWith('#EXTINF')) {
+                                // Extract name after the last comma
+                                currentName = line.split(',').pop();
+                            } else if (line.startsWith('http')) {
+                                parsedChannels.push({
+                                    name: currentName || 'Unknown Channel',
+                                    url: line,
+                                    category: activeCategoryName.value
+                                });
+                            }
+                        }
+                        // Limit to top 100 for performance
+                        channels.value = parsedChannels.slice(0, 100);
+                    } catch (error) {
+                        console.error("Error loading playlist:", error);
+                    } finally {
+                        fetching.value = false;
+                        setTimeout(() => lucide.createIcons(), 100);
+                    }
+                };
+
+                onMounted(() => {
+                    lucide.createIcons();
+                    player.value = videojs('iptv-player', {
+                        fluid: true,
+                        autoplay: false,
+                        controls: true,
+                        responsive: true
+                    });
+                    
+                    // Initial fetch
+                    fetchCategoryChannels();
+                });
+
+                const playChannel = (channel) => {
+                    loading.value = true;
+                    currentChannel.value = channel;
+                    
+                    player.value.src({
+                        src: channel.url,
+                        type: 'application/x-mpegURL'
+                    });
+
+                    player.value.ready(() => {
+                        player.value.play().catch(() => {
+                            console.log("Autoplay blocked or stream error");
+                        });
+                        loading.value = false;
+                    });
+                    
+                    setTimeout(() => lucide.createIcons(), 50);
+                };
+
+                return {
+                    categories,
+                    selectedCategory,
+                    channels,
+                    currentChannel,
+                    activeCategoryName,
+                    loading,
+                    fetching,
+                    playChannel,
+                    fetchCategoryChannels
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
+
